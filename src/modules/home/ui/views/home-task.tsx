@@ -11,7 +11,6 @@ import { toast } from 'sonner'
 const HomeTask = () => {
   const router =useRouter()
   const [deletingId, setDeletingId] = useState<string | null>(null)
-  const [pending,setPending] = useState(false)
   const [page,setPage] = useState(1)
   const trpc = useTRPC()
   const queryClient = useQueryClient()
@@ -47,19 +46,16 @@ const HomeTask = () => {
 
   const onLogout = async () => {
     try {
-      setPending(true)
       await authClient.signOut({
         fetchOptions : {
           onSuccess : () => {
             router.push("/sign-in")
             toast.success("Logged out successfully")
-            setPending(false)
           }
         }
       })
     }
     catch(error){
-      setPending(false)
       toast.error("Failed to logout")
     }
   }
@@ -118,7 +114,6 @@ const HomeTask = () => {
         </Button>
       </div>
       <Button
-      disabled={pending}
       onClick={onLogout}
       >
         Logout
