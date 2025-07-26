@@ -1,4 +1,4 @@
-"use client"
+'use client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { authClient } from '@/lib/auth-client'
@@ -6,58 +6,123 @@ import { useTRPC } from '@/trpc/client'
 import { useMutation, useQueryClient, useSuspenseQuery } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import React, { useState } from 'react'
+import { toast } from 'sonner'
 
 const HomeTask = () => {
-    const [checked, setChecked] = useState(false)
+  const router =useRouter()
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [pending,setPending] = useState(false)
+  const [page,setPage] = useState(1)
+  const trpc = useTRPC()
+  const queryClient = useQueryClient()
+  const updateTask = useMutation(trpc.task.update.mutationOptions({
+    onSuccess : () => {
+      queryClient.invalidateQueries(
+        trpc.task.read.queryOptions({page})
+      )
+    },
+    onError : () => {
+      toast.error("Error occured while updating task")
+    },
+  }))
 
+  const {data:tasks} = useSuspenseQuery(trpc.task.read.queryOptions({page}))
 
-    const router = useRouter()
-    const trpc = useTRPC()
-    const queryClient = useQueryClient()
-    const {data} = useSuspenseQuery(trpc.task.read.queryOptions({}))
-    console.log(data)
-    const onButtonClick = async () => {
+  const deleteTask = useMutation(trpc.task.delete.mutationOptions({
+    onMutate : (input) => {
+      setDeletingId(input.id)
+    },
+    onSettled : () => {
+      setDeletingId(null)
+    },
+    onSuccess : () => {
+      queryClient.invalidateQueries(
+        trpc.task.read.queryOptions({page})
+      )
+    },
+    onError : () => {
+      toast.error("Error occured while deleting data")
+    },
+  }))
+
+  const onLogout = async () => {
+    try {
+      setPending(true)
       await authClient.signOut({
-        fetchOptions: {
+        fetchOptions : {
           onSuccess : () => {
-            router.push("/sign-up")
+            router.push("/sign-in")
+            toast.success("Logged out successfully")
+            setPending(false)
           }
         }
       })
     }
-
-    const mutation = useMutation(trpc.task.delete.mutationOptions({
-      onSuccess : () => {
-      queryClient.invalidateQueries(
-        trpc.task.read.queryOptions({})
-      )
-      },
-      onError : (error) => {
-        console.log(error)
-      }
-    }))
-
-    const onDelete = (id:string) => {
-      mutation.mutate({id})
+    catch(error){
+      setPending(false)
+      toast.error("Failed to logout")
     }
+  }
 
+  const handleNextPage = () => {
+    if(tasks?.hasNextPage) {
+      setPage(prev => prev+1)
+    }
+  }
+
+  const handlePreviousPage = () => {
+    if (tasks?.hasPreviousPage) {
+      setPage(prev => prev-1)
+    }
+  }
 
   return (
-    <div className='flex flex-col gap-y-6'>
-        {data?.map((task)=>
-        (
-          <div key={task.id} className='flex justify-center items-center gap-x-4'>
-            <Checkbox className='border border-black' />{task.task} <Button onClick={()=> onDelete(task.id)}>
-              {mutation.isPending?'Deleting':'Delete'}
-            </Button>
-          </div>
-        )
-        )}
-        <div>
-          <Button onClick={onButtonClick}>
-            Logout
+    <div className='space-y-4'>
+      {tasks?.taskReturned.map((task)=> (
+        <div key={task.id} className='flex items-center gap-x-4 p-3 border rounded-2xl'>
+          <Checkbox
+          disabled={updateTask.isPending}
+          checked={task.completed || false}
+          onCheckedChange={(checked)=> 
+            updateTask.mutate({
+              id:task.id,
+              completed: Boolean(checked)
+            })
+          }
+          />
+          <span className={`flex-1 ${task.completed ? 'line-through text-gray-500':''}`}>
+            {task.task}
+          </span>
+          <Button
+          variant="ghost"
+          disabled={deletingId === task.id}
+          onClick={()=>{
+            deleteTask.mutate({
+              id:task.id
+            })
+          }}
+          >
+            {deletingId === task.id ? 'Deleting':'Delete'}
           </Button>
         </div>
+      ))}
+      <div className='flex items-center justify-between'>
+        <Button variant="outline" disabled={!tasks?.hasPreviousPage} onClick={handlePreviousPage}>
+          Previous
+        </Button>
+        <div className='text-sm text-gray-600'>
+          Page {page} of {tasks?.totalPages || 1}
+        </div>
+        <Button variant="outline" disabled={!tasks?.hasNextPage} onClick={handleNextPage}>
+          Next
+        </Button>
+      </div>
+      <Button
+      disabled={pending}
+      onClick={onLogout}
+      >
+        Logout
+      </Button>
     </div>
   )
 }
